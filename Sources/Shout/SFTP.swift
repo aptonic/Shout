@@ -126,9 +126,9 @@ public class SFTP {
     ///   - remotePath: the location on the remote server whether the file should be uploaded to
     ///   - permissions: the file permissions to create the new file with; defaults to FilePermissions.default
     /// - Throws: SSHError if local file can't be read or upload fails
-    public func upload(localURL: URL, remotePath: String, permissions: FilePermissions = .default) throws {
+    public func upload(localURL: URL, remotePath: String, permissions: FilePermissions = .default, progressHandler: @escaping (_ progressPercent: Int) -> ()) throws {
         let data = try Data(contentsOf: localURL, options: .alwaysMapped)
-        try upload(data: data, remotePath: remotePath, permissions: permissions)
+        try upload(data: data, remotePath: remotePath, permissions: permissions, progressHandler: progressHandler)
     }
     
     /// Upload data to a file on the remote server
@@ -142,7 +142,7 @@ public class SFTP {
         guard let data = string.data(using: .utf8) else {
             throw SSHError.genericError("Unable to convert string to utf8 data")
         }
-        try upload(data: data, remotePath: remotePath, permissions: permissions)
+        try upload(data: data, remotePath: remotePath, permissions: permissions, progressHandler: nil)
     }
     
     /// Upload data to a file on the remote server
@@ -152,7 +152,7 @@ public class SFTP {
     ///   - remotePath: the location on the remote server whether the file should be uploaded to
     ///   - permissions: the file permissions to create the new file with; defaults to FilePermissions.default
     /// - Throws: SSHError if upload fails
-    public func upload(data: Data, remotePath: String, permissions: FilePermissions = .default) throws {
+    public func upload(data: Data, remotePath: String, permissions: FilePermissions = .default, progressHandler: ((_ progressPercent: Int) -> ())?) throws {
         let sftpHandle = try SFTPHandle(
             cSession: cSession,
             sftpSession: sftpSession,
@@ -162,13 +162,19 @@ public class SFTP {
         )
         
         var offset = 0
+        var totalWritten: Int = 0
         while offset < data.count {
             let upTo = Swift.min(offset + SFTPHandle.bufferSize, data.count)
             let subdata = data.subdata(in: offset ..< upTo)
             if subdata.count > 0 {
                 switch sftpHandle.write(subdata) {
                 case .written(let bytesSent):
+                    if let progressHandler = progressHandler {
+                        let percent = ((bytesSent + totalWritten) * 100 / data.count)
+                        progressHandler(percent)
+                    }
                     offset += bytesSent
+                    totalWritten += bytesSent
                 case .eagain:
                     break
                 case .error(let error):
