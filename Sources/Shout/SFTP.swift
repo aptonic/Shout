@@ -14,9 +14,7 @@ public class SFTP {
     /// Direct bindings to libssh2_sftp
     private class SFTPHandle {
         
-        // Recommended buffer size accordingly to the docs:
-        // https://www.libssh2.org/libssh2_sftp_write.html
-        fileprivate static let bufferSize = 32768
+        fileprivate static let bufferSize = 262144
         
         private let cSession: OpaquePointer
         private let sftpHandle: OpaquePointer
@@ -163,15 +161,18 @@ public class SFTP {
         
         var offset = 0
         var totalWritten: Int = 0
+        var lastPercent: Int = 0
+        
         while offset < data.count {
             let upTo = Swift.min(offset + SFTPHandle.bufferSize, data.count)
             let subdata = data.subdata(in: offset ..< upTo)
             if subdata.count > 0 {
                 switch sftpHandle.write(subdata) {
                 case .written(let bytesSent):
-                    if let progressHandler = progressHandler {
-                        let percent = ((bytesSent + totalWritten) * 100 / data.count)
-                        progressHandler(percent)
+                    let percent = ((bytesSent + totalWritten) * 100 / data.count)
+                    if (percent > lastPercent) {
+                        progressHandler?(percent)
+                        lastPercent = percent
                     }
                     offset += bytesSent
                     totalWritten += bytesSent
